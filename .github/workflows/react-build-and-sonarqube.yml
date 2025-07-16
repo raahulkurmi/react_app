@@ -89,6 +89,11 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Debug Pages Configuration
+        run: |
+          echo "Checking Pages status..."
+          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/${{ github.repository }}/pages || echo "Pages not fully configured yet"
+
       - name: Upload Artifact
         uses: actions/upload-pages-artifact@v3
         with:
