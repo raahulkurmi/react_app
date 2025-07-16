@@ -50,8 +50,10 @@ jobs:
 
       - name: Debug SonarQube Output
         run: |
+          echo "Checking scanner work directory..."
           ls -la /github/workspace/.scannerwork/ || echo "Scanner work directory not found"
           if [ -f "/github/workspace/.scannerwork/report-task.txt" ]; then
+            echo "report-task.txt found"
             cat /github/workspace/.scannerwork/report-task.txt
           else
             echo "report-task.txt not found"
@@ -78,3 +80,31 @@ jobs:
             DUPLICATIONS=$(echo $RESULTS | jq -r '.component.measures[] | select(.metric=="duplicated_lines_density") | .value')
             QUALITY_GATE_STATUS=${{ steps.quality_gate.outputs.quality-gate-status }}
             echo "QUALITY_GATE_STATUS=$QUALITY_GATE_STATUS" >> $GITHUB_ENV
+            echo "SONAR_RESULTS=**SonarQube Scan Results**%0A- Quality Gate: $QUALITY_GATE_STATUS%0A- Bugs: $BUGS%0A- Vulnerabilities: $VULNERABILITIES%0A- Code Smells: $CODE_SMELLS%0A- Coverage: $COVERAGE%%0A- Duplications: $DUPLICATIONS%%0A[View in SonarQube](${{ secrets.SONAR_HOST_URL }}/dashboard?id=myreactproject)" >> $GITHUB_ENV
+          else
+            echo "SONAR_RESULTS=**SonarQube Scan Results**%0A- Warning: No analysis results available (report-task.txt not found).%0A[View in SonarQube](${{ secrets.SONAR_HOST_URL }}/dashboard?id=myreactproject)" >> $GITHUB_ENV
+          fi
+
+      - name: Comment on Pull Request
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `${{ env.SONAR_RESULTS }}`
+            })
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
