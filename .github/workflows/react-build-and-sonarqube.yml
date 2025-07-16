@@ -9,6 +9,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      pages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,11 +46,6 @@ jobs:
             -Dsonar.exclusions=**/node_modules/**
             -Dsonar.tests=src
             -Dsonar.test.inclusions=**/*test.js
-            -Dsonar.pullrequest.key=${{ github.event.number }}
-            -Dsonar.pullrequest.branch=${{ github.head_ref }}
-            -Dsonar.pullrequest.base=${{ github.base_ref }}
-            -Dsonar.pullrequest.github.repository=${{ github.repository }}
-            -Dsonar.scm.revision=${{ github.event.pull_request.head.sha }}
 
       - name: SonarQube Quality Gate Check
         id: quality_gate
@@ -70,7 +67,7 @@ jobs:
           DUPLICATIONS=$(echo $RESULTS | jq -r '.component.measures[] | select(.metric=="duplicated_lines_density") | .value')
           QUALITY_GATE_STATUS=${{ steps.quality_gate.outputs.quality-gate-status }}
           echo "QUALITY_GATE_STATUS=$QUALITY_GATE_STATUS" >> $GITHUB_ENV
-          echo "SONAR_RESULTS=**SonarQube Scan Results**%0A- Quality Gate: $QUALITY_GATE_STATUS%0A- Bugs: $BUGS%0A- Vulnerabilities: $VULNERABILITIES%0A- Code Smells: $CODE_SMELLS%0A- Coverage: $COVERAGE%%0A- Duplications: $DUPLICATIONS%%0A[View in SonarQube](${{ secrets.SONAR_HOST_URL }}/dashboard?id=myreactproject&pullRequest=${{ github.event.number }})" >> $GITHUB_ENV
+          echo "SONAR_RESULTS=**SonarQube Scan Results**%0A- Quality Gate: $QUALITY_GATE_STATUS%0A- Bugs: $BUGS%0A- Vulnerabilities: $VULNERABILITIES%0A- Code Smells: $CODE_SMELLS%0A- Coverage: $COVERAGE%%0A- Duplications: $DUPLICATIONS%%0A[View in SonarQube](${{ secrets.SONAR_HOST_URL }}/dashboard?id=myreactproject)" >> $GITHUB_ENV
 
       - name: Comment on Pull Request
         uses: actions/github-script@v6
@@ -83,3 +80,15 @@ jobs:
               issue_number: context.issue.number,
               body: `${{ env.SONAR_RESULTS }}`
             })
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
