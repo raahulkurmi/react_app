@@ -2,15 +2,13 @@ name: SonarQube Analysis and PR Comment
 
 on:
   pull_request:
-    branches:
-      - main
 
 jobs:
   sonar-analysis:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -21,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests with coverage
+      - name: Run tests with coverage (won't fail workflow)
         run: npm test -- --coverage
         continue-on-error: true
 
@@ -51,3 +49,10 @@ jobs:
       - name: Comment Quality Gate result on PR
         uses: marocchino/sticky-pull-request-comment@v2
         with:
+          header: sonar-quality-gate
+          message: |
+            🧪 **SonarQube Quality Gate Result**
+            ```
+            $(jq -r '.projectStatus.status' sonar_result.json)
+            ```
+            🔗 [View full report](${{ secrets.SONAR_HOST_URL }}/dashboard?id=myreactproject)
