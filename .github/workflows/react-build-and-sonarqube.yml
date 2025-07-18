@@ -1,110 +1,58 @@
-name: React Build and SonarQube Scan
+name: SonarQube Analysis for React
+
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    branches: [master]  # Change if needed
 
 jobs:
-  build-and-sonarqube:
+  sonarqube:
+    name: SonarQube Scan and PR Comment
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      pages: write
-      id-token: write
+
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Disable shallow clone for better analysis
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build React App
-        run: npm run build
+      - name: Run Tests to Generate Coverage
+        run: npm test -- --coverage
 
-      - name: Cache SonarQube packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.sonar/cache
-          key: ${{ runner.os }}-sonar
-          restore-keys: ${{ runner.os }}-sonar
-
-      - name: SonarQube Scan
-        uses: sonarsource/sonarqube-scan-action@master
+      - name: Run SonarQube Analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        with:
-          args: >
-            -Dsonar.projectKey=myreactproject
-            -Dsonar.sources=src
-            -Dsonar.exclusions=**/node_modules/**
-            -Dsonar.tests=src
-            -Dsonar.test.inclusions=**/*test.js
-            -Dsonar.verbose=true # Enable verbose logging
-
-      - name: Debug SonarQube Output
         run: |
-          echo "Checking scanner work directory..."
-          ls -la /github/workspace/.scannerwork/ || echo "Scanner work directory not found"
-          if [ -f "/github/workspace/.scannerwork/report-task.txt" ]; then
-            echo "report-task.txt found"
-            cat /github/workspace/.scannerwork/report-task.txt
-          else
-            echo "report-task.txt not found"
-          fi
+          npx sonar-scanner \
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.pullrequest.key=${{ github.event.pull_request.number }} \
+            -Dsonar.pullrequest.branch=${{ github.head_ref }} \
+            -Dsonar.pullrequest.base=${{ github.base_ref }}
 
-      - name: SonarQube Quality Gate Check
-        id: quality_gate
-        uses: sonarsource/sonarqube-quality-gate-action@master
-        timeout-minutes: 5
+      - name: Wait for SonarQube Report to Finalize
+        run: sleep 20
+
+      - name: Fetch Quality Gate Status
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-
-      - name: Fetch SonarQube Analysis Results
-        id: fetch_results
         run: |
-          if [ -f "/github/workspace/.scannerwork/report-task.txt" ]; then
-            ANALYSIS_ID=$(curl -s -u ${{ secrets.SONAR_TOKEN }}: "${{ secrets.SONAR_HOST_URL }}/api/ce/task?id=$(cat /github/workspace/.scannerwork/report-task.txt | grep ceTaskId | cut -d'=' -f2)" | jq -r '.task.analysisId')
-            RESULTS=$(curl -s -u ${{ secrets.SONAR_TOKEN }}: "${{ secrets.SONAR_HOST_URL }}/api/measures/component?component=myreactproject&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density&analysisId=$ANALYSIS_ID")
-            BUGS=$(echo $RESULTS | jq -r '.component.measures[] | select(.metric=="bugs") | .value')
-            VULNERABILITIES=$(echo $RESULTS | jq -r '.component.measures[] | select(.metric=="vulnerabilities") | .value')
-            CODE_SMELLS=$(echo $RESULTS | jq -r '.component.measures[] | select(.metric=="code_smells") | .value')
-            COVERAGE=$(echo $RESULTS | jq -r '.component.measures[] | select(.metric=="coverage") | .value')
-            DUPLICATIONS=$(echo $RESULTS | jq -r '.component.measures[] | select(.metric=="duplicated_lines_density") | .value')
-            QUALITY_GATE_STATUS=${{ steps.quality_gate.outputs.quality-gate-status }}
-            echo "QUALITY_GATE_STATUS=$QUALITY_GATE_STATUS" >> $GITHUB_ENV
-            echo "SONAR_RESULTS=**SonarQube Scan Results**%0A- Quality Gate: $QUALITY_GATE_STATUS%0A- Bugs: $BUGS%0A- Vulnerabilities: $VULNERABILITIES%0A- Code Smells: $CODE_SMELLS%0A- Coverage: $COVERAGE%%0A- Duplications: $DUPLICATIONS%%0A[View in SonarQube](${{ secrets.SONAR_HOST_URL }}/dashboard?id=myreactproject)" >> $GITHUB_ENV
-          else
-            echo "SONAR_RESULTS=**SonarQube Scan Results**%0A- Warning: No analysis results available (report-task.txt not found).%0A[View in SonarQube](${{ secrets.SONAR_HOST_URL }}/dashboard?id=myreactproject)" >> $GITHUB_ENV
-          fi
+          curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "${{ secrets.SONAR_HOST_URL }}/api/qualitygates/project_status?projectKey=my-react-app" \
+            -o sonar_result.json
 
-      - name: Comment on Pull Request
-        uses: actions/github-script@v6
+      - name: Comment on PR with SonarQube Result
+        uses: marocchino/sticky-pull-request-comment@v2
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `${{ env.SONAR_RESULTS }}`
-            })
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: build
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          header: sonar-report
+          message: |
+            🧪 **SonarQube Quality Gate Result**
+            ```
+            $(jq -r '.projectStatus.status' sonar_result.json)
+            ```
+            🔗 [View full report](${{ secrets.SONAR_HOST_URL }}/dashboard?id=my-react-app)
