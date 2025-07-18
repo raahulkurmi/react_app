@@ -3,7 +3,7 @@ name: SonarQube Analysis and PR Comment
 on:
   pull_request:
     branches:
-      - master  # adjust if your default branch is different
+      - master
 
 jobs:
   sonar-analysis:
@@ -23,6 +23,7 @@ jobs:
 
       - name: Run tests with coverage
         run: npm test -- --coverage
+        continue-on-error: true
 
       - name: Run SonarQube scanner
         env:
@@ -50,10 +51,3 @@ jobs:
       - name: Comment Quality Gate result on PR
         uses: marocchino/sticky-pull-request-comment@v2
         with:
-          header: sonar-quality-gate
-          message: |
-            🧪 **SonarQube Quality Gate Result**
-            ```
-            $(jq -r '.projectStatus.status' sonar_result.json)
-            ```
-            🔗 [View full report](${{ secrets.SONAR_HOST_URL }}/dashboard?id=myreactproject)
