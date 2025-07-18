@@ -3,7 +3,7 @@ name: SonarQube Analysis and PR Comment
 on:
   pull_request:
     branches:
-      - master
+      - main
 
 jobs:
   sonar-analysis:
